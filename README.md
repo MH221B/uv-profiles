@@ -4,6 +4,14 @@ A small Windows PowerShell workflow for named `uv` virtual environments.
 
 ## Install
 
+After reviewing the bootstrap source, install and load the latest stable release in the current PowerShell session:
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/MH221B/uv-profiles/main/bootstrap/Install-UvProfile.ps1' -ErrorAction Stop)))
+```
+
+This executes downloaded code. See [`docs/bootstrap.md`](docs/bootstrap.md) for the review-first flow, release behavior, and security details.
+
 Review `src/uv-profile.ps1` and `Install-UvProfile.ps1`, then run from this repository in PowerShell:
 
 ```powershell
