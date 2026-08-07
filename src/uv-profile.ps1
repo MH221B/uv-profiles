@@ -115,7 +115,36 @@ function global:__UvRunEnv([object[]]$A) {
     if ($A.Count -gt 2) { $scriptArguments = @($A[2..($A.Count - 1)]) }
     & $profile.PythonPath $scriptPath @scriptArguments
 }
+function global:__UvVenv([object[]]$A) {
+    if ($null -eq $A) { $A = @() } else { $A = @($A) }
+    if ($A.Count -lt 2) {
+        & $global:__UvExePath @A
+        return
+    }
+
+    $target = [string]$A[1]
+    $isPathLike = $target.IndexOfAny([char[]]('/\:')) -ge 0 -or $target.StartsWith('.') -or $target.StartsWith('~') -or $target.StartsWith('-')
+    if ($isPathLike) {
+        & $global:__UvExePath @A
+        return
+    }
+
+    __UvValidateName $target
+    $forwarded = @('venv', (Join-Path (__UvWorkonHome) $target))
+    if ($A.Count -gt 2) { $forwarded += @($A[2..($A.Count - 1)]) }
+    & $global:__UvExePath @forwarded
+}
 function global:uv {
     if($args.Count -gt 0 -and $args[0] -ieq 'runenv'){$ra=@();if($args.Count -gt 1){$ra=@($args[1..($args.Count-1)])};__UvRunEnv -A $ra;return}
-    if($args.Count -gt 0 -and $args[0] -ieq 'activate'){$aa=@($args);__UvActivate -A $aa;return};if($args.Count -gt 0 -and $args[0] -ieq 'profiles'){$pa=@();if($args.Count -gt 1){$pa=@($args[1..($args.Count-1)])};__UvProfiles -A $pa;return};if([string]::IsNullOrWhiteSpace($global:__UvExePath)){Write-Error 'uv.exe was not found on PATH; custom uv profile commands are available, but standard uv commands cannot run.';return};& $global:__UvExePath @args
+    if($args.Count -gt 0 -and $args[0] -ieq 'activate'){$aa=@($args);__UvActivate -A $aa;return};if($args.Count -gt 0 -and $args[0] -ieq 'profiles'){$pa=@();if($args.Count -gt 1){$pa=@($args[1..($args.Count-1)])};__UvProfiles -A $pa;return}
+    if($args.Count -gt 0 -and $args[0] -ieq 'venv') {
+        if([string]::IsNullOrWhiteSpace($global:__UvExePath)) {
+            Write-Error 'uv.exe was not found on PATH; custom uv profile commands are available, but standard uv commands cannot run.'
+            return
+        }
+        $va=@($args)
+        __UvVenv -A $va
+        return
+    }
+    if([string]::IsNullOrWhiteSpace($global:__UvExePath)){Write-Error 'uv.exe was not found on PATH; custom uv profile commands are available, but standard uv commands cannot run.';return};& $global:__UvExePath @args
 }

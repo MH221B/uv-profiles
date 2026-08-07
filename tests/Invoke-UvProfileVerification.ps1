@@ -21,9 +21,13 @@ function Get-EnvState { param([string]$Name) if (Test-Path -LiteralPath "Env:$Na
 
 if (-not (Test-Path -LiteralPath $UvExe -PathType Leaf)) { throw "uv executable was not found at '$UvExe'." }
 New-Item -ItemType Directory -Path $TestRoot -Force | Out-Null
-$alpha = Join-Path $TestRoot 'alpha'
-$noActivate = Join-Path $TestRoot 'no_activate'
-$missingPython = Join-Path $TestRoot 'missing_python\Scripts'
+$profileRoot = Join-Path $TestRoot 'profiles'
+$workingRoot = Join-Path $TestRoot 'working'
+New-Item -ItemType Directory -Path $profileRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $workingRoot -Force | Out-Null
+$alpha = Join-Path $profileRoot 'alpha'
+$noActivate = Join-Path $profileRoot 'no_activate'
+$missingPython = Join-Path $profileRoot 'missing_python\Scripts'
 & $UvExe venv $alpha --python 3.12
 if ($LASTEXITCODE -ne 0) { throw "uv venv failed for '$alpha'." }
 & $UvExe venv $noActivate --python 3.12
@@ -47,8 +51,73 @@ $wildcardScript = Join-Path $TestRoot '[literal].py'
 Set-Content -LiteralPath $wildcardScript -Encoding UTF8 -Value "print('wildcard path ran')"
 $capturePath = Join-Path $TestRoot 'captures with spaces.json'
 
-$env:WORKON_HOME = $TestRoot
+$env:WORKON_HOME = $profileRoot
 . $SharedScript
+
+$named = Join-Path $profileRoot 'named'
+Push-Location $workingRoot
+try {
+    uv venv named --python 3.12
+    if ($LASTEXITCODE -ne 0) { throw 'named venv creation failed.' }
+    Assert-True 'named venv Python' (Test-Path -LiteralPath (Join-Path $named 'Scripts\python.exe') -PathType Leaf)
+    Assert-True 'named venv is not relative' (-not (Test-Path -LiteralPath (Join-Path $workingRoot 'named\Scripts\python.exe') -PathType Leaf))
+}
+finally {
+    Pop-Location
+}
+
+$explicit = Join-Path $TestRoot 'explicit'
+uv venv $explicit --python 3.12
+if ($LASTEXITCODE -ne 0) { throw 'explicit path venv creation failed.' }
+Assert-True 'explicit path venv' (Test-Path -LiteralPath (Join-Path $explicit 'Scripts\python.exe') -PathType Leaf)
+
+$dotWorking = Join-Path $TestRoot 'dot-working'
+$dotVenv = Join-Path $dotWorking '.venv'
+New-Item -ItemType Directory -Path $dotWorking -Force | Out-Null
+Push-Location $dotWorking
+try {
+    uv venv .venv --python 3.12
+    if ($LASTEXITCODE -ne 0) { throw 'dot path venv creation failed.' }
+}
+finally {
+    Pop-Location
+}
+Assert-True 'dot path venv' (Test-Path -LiteralPath (Join-Path $dotVenv 'Scripts\python.exe') -PathType Leaf)
+Assert-True 'dot path not managed' (-not (Test-Path -LiteralPath (Join-Path $profileRoot '.venv\Scripts\python.exe') -PathType Leaf))
+
+$optionWorking = Join-Path $TestRoot 'option-working'
+$optionVenv = Join-Path $optionWorking 'option-env'
+New-Item -ItemType Directory -Path $optionWorking -Force | Out-Null
+Push-Location $optionWorking
+try {
+    uv venv --python 3.12 option-env
+    if ($LASTEXITCODE -ne 0) { throw 'option-first venv creation failed.' }
+}
+finally {
+    Pop-Location
+}
+Assert-True 'option-first venv' (Test-Path -LiteralPath (Join-Path $optionVenv 'Scripts\python.exe') -PathType Leaf)
+Assert-True 'option-first target not managed' (-not (Test-Path -LiteralPath (Join-Path $profileRoot 'option-env\Scripts\python.exe') -PathType Leaf))
+
+$helpOutput = ((@(uv venv -h 2>&1 | Out-String) -join '')).Trim()
+Assert-Contains 'venv help passthrough' $helpOutput 'Usage:'
+Assert-True 'help target not managed' (-not (Test-Path -LiteralPath (Join-Path $profileRoot '-h')))
+
+$invalidLastExitCode = 91
+$global:LASTEXITCODE = $invalidLastExitCode
+Assert-ThrowsContaining 'invalid plain venv name' { uv venv 'invalid.' --python 3.12 } 'Invalid profile name'
+Assert-Equal 'invalid venv name exit preservation' $invalidLastExitCode $LASTEXITCODE
+
+$dashMarker = Join-Path $profileRoot 'dash_marker'
+Push-Location $workingRoot
+try {
+    uv venv -- dash_marker --python 3.12
+    if ($LASTEXITCODE -ne 0) { throw 'PowerShell 5.1 dash-marker case failed.' }
+}
+finally {
+    Pop-Location
+}
+Assert-True 'PowerShell 5.1 dash marker behavior' (Test-Path -LiteralPath (Join-Path $dashMarker 'Scripts\python.exe') -PathType Leaf)
 
 $pathBeforeHelp = $env:PATH
 $promptBeforeHelp = Get-FunctionText 'prompt'
@@ -102,6 +171,26 @@ Assert-Equal 'active PATH after failed runenv' $pathBeforeRunenv $env:PATH
 Assert-Equal 'active VIRTUAL_ENV after failed runenv' $virtualEnvBeforeRunenv.Value $env:VIRTUAL_ENV
 Assert-Equal 'active prompt after failed runenv' $promptBeforeRunenv (Get-FunctionText 'prompt')
 Assert-Equal 'active profile name after failed runenv' $activeNameBeforeRunenv $global:__UvProfileState.ActiveProfileName
+$failedVenvOutput = ''
+try { $failedVenvOutput = ((@(uv venv failed --python 0.0.0 2>&1 | Out-String) -join '')).Trim() } catch { $failedVenvOutput = $_.Exception.Message }
+Assert-True 'named venv failure exit code' ($LASTEXITCODE -ne 0)
+Assert-True 'named venv failure output' ($failedVenvOutput.Length -gt 0)
+$rerunOutput = ''
+try { $rerunOutput = ((@(uv venv named --python 3.12 2>&1 | Out-String) -join '')).Trim() } catch { $rerunOutput = $_.Exception.Message }
+Assert-True 'existing named venv exit code' ($LASTEXITCODE -ne 0)
+Assert-True 'existing named venv output' ($rerunOutput.Length -gt 0)
+$activePathBeforeVenv = $env:PATH
+$activeVirtualEnvBeforeVenv = Get-EnvState 'VIRTUAL_ENV'
+$activePromptBeforeVenv = Get-EnvState 'VIRTUAL_ENV_PROMPT'
+$activePromptFunctionBeforeVenv = Get-FunctionText 'prompt'
+$activeDeactivateFunctionBeforeVenv = Get-FunctionText 'deactivate'
+uv venv while_active --python 3.12
+if ($LASTEXITCODE -ne 0) { throw 'active-state venv creation failed.' }
+Assert-Equal 'active PATH after venv' $activePathBeforeVenv $env:PATH
+Assert-Equal 'active VIRTUAL_ENV after venv' $activeVirtualEnvBeforeVenv.Value $env:VIRTUAL_ENV
+Assert-Equal 'active VIRTUAL_ENV_PROMPT after venv' $activePromptBeforeVenv.Value $env:VIRTUAL_ENV_PROMPT
+Assert-Equal 'active prompt after venv' $activePromptFunctionBeforeVenv (Get-FunctionText 'prompt')
+Assert-Equal 'active deactivate after venv' $activeDeactivateFunctionBeforeVenv (Get-FunctionText 'deactivate')
 $global:LASTEXITCODE = 92
 Assert-ThrowsContaining 'invalid name exit preservation' { uv runenv 'bad/name' $argumentScript } "Invalid profile name 'bad/name'"
 Assert-Equal 'LASTEXITCODE after invalid name' 92 $LASTEXITCODE
@@ -124,10 +213,20 @@ $env:PATH = (($env:PATH -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -in
 . $SharedScript
 uv runenv no_activate $ScriptPath $OutputPath '--without-uv'
 if (-not (Test-Path -LiteralPath $OutputPath -PathType Leaf)) { throw 'runenv did not execute without uv.exe.' }
+$venvError = $null
+try {
+    uv venv no_uv --python 3.12
+}
+catch {
+    $venvError = $_.Exception.Message
+}
+if ($null -eq $venvError -or $venvError.IndexOf('uv.exe was not found on PATH', [StringComparison]::Ordinal) -lt 0) {
+    throw 'missing-uv venv verification failed.'
+}
 '@
 $withoutUvCapture = Join-Path $TestRoot 'without-uv.json'
 $uvBin = Split-Path -Parent $UvExe
-$child = powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File $childScript -SharedScript $SharedScript -Root $TestRoot -ScriptPath $argumentScript -OutputPath $withoutUvCapture -UvBin $uvBin
+$child = powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File $childScript -SharedScript $SharedScript -Root $profileRoot -ScriptPath $argumentScript -OutputPath $withoutUvCapture -UvBin $uvBin
 if ($LASTEXITCODE -ne 0) { throw 'missing-uv child verification failed.' }
 Assert-True 'missing-uv output' (Test-Path -LiteralPath $withoutUvCapture -PathType Leaf)
 

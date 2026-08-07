@@ -24,7 +24,7 @@ The installer updates only the current shell's effective `$PROFILE`. It does not
 ## Use
 
 ```powershell
-uv venv "$env:WORKON_HOME\data" --python 3.12
+uv venv data --python 3.12
 uv profiles
 uv activate data
 uv pip install requests
@@ -32,7 +32,9 @@ deactivate
 uv --version
 ```
 
-`uv activate` validates names and never dot-sources a generated activation script. Other uv commands pass through to `uv.exe`.
+`uv venv <name>` creates the environment under `$env:WORKON_HOME` (which defaults to `$HOME\.virtualenvs`). Explicit path-like targets such as `.\temporary-env`, `.venv`, or `C:\envs\data`, leading-dash targets, and option-first invocations pass through to `uv.exe` unchanged. PowerShell 5.1 removes `--` before the wrapper sees it, so use explicit path syntax when bypassing managed-name resolution.
+
+`uv activate` validates names and never dot-sources a generated activation script. `uv profiles` and `uv runenv` remain custom commands; other uv commands pass through to `uv.exe`.
 
 ### Run Without Activation
 
