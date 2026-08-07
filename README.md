@@ -34,6 +34,21 @@ uv --version
 
 `uv activate` validates names and never dot-sources a generated activation script. Other uv commands pass through to `uv.exe`.
 
+### Run Without Activation
+
+Run a script with a named profile's Python without changing the current shell:
+
+```powershell
+uv runenv pulse_env .\report.py
+uv runenv pulse_env .\report.py --input data.csv --count 3
+uv runenv pulse_env .\report.py "file with spaces.txt" --verbose
+```
+
+Only the profile name and script path are consumed by `runenv`; arguments after
+the script path are passed to the script in order. The command requires
+`Scripts\python.exe` but does not require `Activate.ps1` and does not change
+`PATH`, `VIRTUAL_ENV`, or the prompt.
+
 ## Uninstall
 
 Remove the exact loader line from the effective `$PROFILE`, then remove the installed runtime copy under `$env:LOCALAPPDATA\uv`. Do not remove environments unless you explicitly want to delete them.

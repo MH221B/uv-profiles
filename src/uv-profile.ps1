@@ -73,7 +73,9 @@ function global:__UvActivate([object[]]$A) {
     if ($A.Count -ne 2) { throw 'Usage: uv activate <profile-name>' }
     $name=[string]$A[1]; __UvValidateName $name; $target=__UvProfile $name -RequirePython; $old=$global:__UvProfileState
     if ($old.ManagedActive -and $old.ActiveProfileName -ieq $name) { Write-Output "Profile '$name' is already active."; return }
-    $rollback = @{ Path=$env:PATH; VE=(if (Test-Path Env:VIRTUAL_ENV) {@{P=$true;V=$env:VIRTUAL_ENV}} else {@{P=$false;V=$null}}); VEP=(if (Test-Path Env:VIRTUAL_ENV_PROMPT) {@{P=$true;V=$env:VIRTUAL_ENV_PROMPT}} else {@{P=$false;V=$null}}); Prompt=__UvFunction prompt; Deactivate=__UvFunction deactivate; State=$old }
+    $rollbackVirtualEnv = @{ P = (Test-Path Env:VIRTUAL_ENV); V = $env:VIRTUAL_ENV }
+    $rollbackVirtualEnvPrompt = @{ P = (Test-Path Env:VIRTUAL_ENV_PROMPT); V = $env:VIRTUAL_ENV_PROMPT }
+    $rollback = @{ Path=$env:PATH; VE=$rollbackVirtualEnv; VEP=$rollbackVirtualEnvPrompt; Prompt=__UvFunction prompt; Deactivate=__UvFunction deactivate; State=$old }
     try {
         if ($old.ManagedActive) { __UvClear }
         elseif (Test-Path Env:VIRTUAL_ENV) { $root=__UvWorkonHome; if ((__UvPath $env:VIRTUAL_ENV).StartsWith((__UvPath $root)+'\',[StringComparison]::OrdinalIgnoreCase)) { throw "Cannot activate '$name': VIRTUAL_ENV is set inside WORKON_HOME without managed state. Start a fresh PowerShell session or remove VIRTUAL_ENV first." }; throw "Cannot activate '$name': VIRTUAL_ENV points outside WORKON_HOME. Deactivate the external environment first." }
@@ -89,4 +91,31 @@ function global:__UvProfiles([object[]]$A) {
     foreach($item in @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction Stop)){ $p=__UvProfile $item.Name; if(-not $p.HasActivate){continue}; $v='unknown'; if($p.HasPython){$o=(& $p.PythonPath --version 2>&1|Out-String).Trim();if($LASTEXITCODE -eq 0 -and $o -match '^Python\s+(.+)$'){$v=$Matches[1]}}; $status=if($global:__UvProfileState.ManagedActive -and (__UvPath $p.ProfilePath) -ieq (__UvPath $global:__UvProfileState.ActiveProfilePath)){'active'}else{'inactive'};$rows += [pscustomobject]@{NAME=$p.Name;PYTHON=$v;STATUS=$status} }
     if($rows.Count -eq 0){Write-Output "No uv profiles found in '$root'."}else{$rows|Sort-Object NAME|Format-Table -AutoSize}
 }
-function global:uv { if($args.Count -gt 0 -and $args[0] -ieq 'activate'){__UvActivate @args;return};if($args.Count -gt 0 -and $args[0] -ieq 'profiles'){$pa=@();if($args.Count -gt 1){$pa=@($args[1..($args.Count-1)])};__UvProfiles $pa;return};if([string]::IsNullOrWhiteSpace($global:__UvExePath)){Write-Error 'uv.exe was not found on PATH; custom uv profile commands are available, but standard uv commands cannot run.';return};& $global:__UvExePath @args }
+function global:__UvRunEnv([object[]]$A) {
+    if ($null -eq $A) { $A = @() } else { $A = @($A) }
+    if ($A.Count -eq 1 -and $A[0] -in @('-h', '--help')) {
+        Write-Output 'Usage: uv runenv <profile-name> <script-path> [script-arguments...]'
+        return
+    }
+    if ($A.Count -lt 2) { throw 'Usage: uv runenv <profile-name> <script-path> [script-arguments...]' }
+
+    $name = [string]$A[0]
+    $profile = __UvProfile $name
+    if (-not $profile.HasPython) {
+        throw "Profile '$name' does not contain a usable Python executable at '$($profile.PythonPath)'."
+    }
+
+    $scriptPath = [string]$A[1]
+    if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+        throw "Python script '$scriptPath' was not found as a file."
+    }
+    $scriptPath = __UvPath $scriptPath
+
+    $scriptArguments = @()
+    if ($A.Count -gt 2) { $scriptArguments = @($A[2..($A.Count - 1)]) }
+    & $profile.PythonPath $scriptPath @scriptArguments
+}
+function global:uv {
+    if($args.Count -gt 0 -and $args[0] -ieq 'runenv'){$ra=@();if($args.Count -gt 1){$ra=@($args[1..($args.Count-1)])};__UvRunEnv -A $ra;return}
+    if($args.Count -gt 0 -and $args[0] -ieq 'activate'){$aa=@($args);__UvActivate -A $aa;return};if($args.Count -gt 0 -and $args[0] -ieq 'profiles'){$pa=@();if($args.Count -gt 1){$pa=@($args[1..($args.Count-1)])};__UvProfiles -A $pa;return};if([string]::IsNullOrWhiteSpace($global:__UvExePath)){Write-Error 'uv.exe was not found on PATH; custom uv profile commands are available, but standard uv commands cannot run.';return};& $global:__UvExePath @args
+}
