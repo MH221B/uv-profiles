@@ -1,6 +1,6 @@
 # uv PowerShell Profiles
 
-A small Windows PowerShell workflow for named `uv` virtual environments.
+A small Windows PowerShell workflow for named `uv` virtual environments. I made this mainly because I wanted something similar to miniconda but doesnt auto hook on every powershell instance opened.
 
 ## Install
 
