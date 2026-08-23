@@ -24,7 +24,11 @@ Review `src/uv-profile.ps1` and `Install-UvProfile.ps1`, then run from this repo
 . $PROFILE
 ```
 
-The installer detects which PowerShell is available and installs the loader into the preferred profile: it targets PowerShell 7 (`pwsh.exe`) when present and falls back to Windows PowerShell 5.1 otherwise. Pass `-ProfilePath` to target a specific profile explicitly. The runtime is neutral to either host, so the same loader line works in both. The installer does not change execution policy or machine-wide configuration. If the effective execution policy is `Restricted` or `AllSigned`, it refuses to run. By default profiles live under `$HOME\.virtualenvs`.
+The installer detects which PowerShell is available and installs the loader into the preferred profile: it targets PowerShell 7 (`pwsh.exe`) when present and falls back to Windows PowerShell 5.1 otherwise. Pass `-ProfilePath` to target a specific profile explicitly. The runtime is neutral to either host, so the same loader line works in both.
+
+The installer also checks for `uv.exe` on `PATH`. If it is missing, it installs uv via WinGet (`winget install --id=astral-sh.uv -e`) so standard `uv` commands work after install. This step is non-fatal: if WinGet is unavailable or the install fails, the installer warns and finishes, and the profile still loads (standard `uv` commands just won't run until uv is installed). Pass `-SkipUv` to skip this uv check and install step entirely.
+
+The installer does not change execution policy. If the effective execution policy is `Restricted` or `AllSigned`, it refuses to run. By default profiles live under `$HOME\.virtualenvs`.
 
 ## Configuration
 
@@ -79,7 +83,7 @@ Remove the exact loader line from the effective `$PROFILE`, then remove the inst
 
 ## Security
 
-Review scripts before execution. This project makes no execution-policy changes, accepts no arbitrary activation paths, and performs no machine-wide writes. Verification uses disposable roots only.
+Review scripts before execution. This project makes no execution-policy changes and accepts no arbitrary activation paths. The installer may install `uv` via WinGet when it is missing (use `-SkipUv` to prevent it), but it writes nothing else machine-wide. Verification uses disposable roots only.
 
 ## Repository Layout
 
