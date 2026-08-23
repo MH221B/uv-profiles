@@ -30,6 +30,73 @@ The installer also checks for `uv.exe` on `PATH`. If it is missing, it installs 
 
 The installer does not change execution policy. If the effective execution policy is `Restricted` or `AllSigned`, it refuses to run. By default profiles live under `$HOME\.virtualenvs`.
 
+## Linux / WSL (bash)
+
+A bash runtime mirrors the PowerShell workflow on Linux and WSL: named `uv` virtual
+environments under `WORKON_HOME` (default `$HOME/.virtualenvs`), activated with
+`uv activate <name>` and released with `deactivate`, without conda's per-session
+startup cost — only a small `uv` wrapper function is loaded.
+
+Requirements: bash ≥ 4 and `uv`. The wrapper still loads when `uv` is missing, but
+standard `uv` commands cannot run until it is installed.
+
+### Install
+
+Review `src/uv-profile.sh` and `install.sh`, then run from the repository:
+
+```bash
+bash install.sh
+```
+
+The installer detects the operating system and redirects accordingly: on Linux/WSL
+(and best-effort macOS) it installs the bash runtime and adds a loader line to
+`~/.bashrc`; on Windows it stops and points to the PowerShell runtime above. The
+loader line is added idempotently (never duplicated). Pass `--profile-root` to target
+a specific rc file, or `--skip-uv` to skip the uv check and install step. If `uv` is
+missing, the installer offers the official installer
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`) unless `--skip-uv` is given; this
+step is non-fatal. WSL is detected automatically (via the kernel release string) and
+behaves identically to native Linux.
+
+The installed runtime lives at `$XDG_DATA_HOME/uv/uv-profile.sh` (default
+`$HOME/.local/share/uv/uv-profile.sh`).
+
+Then start a new shell (or `. ~/.bashrc`).
+
+### Use
+
+```bash
+uv venv data --python 3.12
+uv profiles
+uv activate data
+uv pip install requests
+deactivate
+uv --version
+```
+
+Semantics match the PowerShell runtime: `uv venv <name>` creates under `WORKON_HOME`;
+path-like and option-first targets pass through to `uv` unchanged. `uv activate`
+validates names and never sources the generated activation script — `bin/activate` is
+used only as a validity marker. Activation snapshots `PATH`, `VIRTUAL_ENV`,
+`VIRTUAL_ENV_PROMPT`, the `PS1` prompt, and any existing `deactivate` function, then
+prepends the profile's `bin` directory to `PATH`, sets the variables, and prefixes
+the prompt with `(name) `; `deactivate` restores everything. `uv profiles` lists valid
+profiles as `NAME`, `PYTHON`, `STATUS`. `uv runenv <name> <script> [args...]` runs a
+script with a profile's Python without changing the current shell, propagating the
+script's exit code.
+
+### Uninstall
+
+Remove the loader line from `~/.bashrc`, then delete
+`$HOME/.local/share/uv/uv-profile.sh` (or your XDG data root). Remove environments
+only if you want to delete them.
+
+### Security
+
+Review scripts before execution. The installer writes only to the install directory
+and the rc file, and may install `uv` via the official script unless `--skip-uv` is
+passed. Verification uses disposable roots only.
+
 ## Configuration
 
 Set `$env:WORKON_HOME` to change the profile root. If it is unset, profiles are stored under `$HOME\.virtualenvs`. The installed runtime is copied to `$env:LOCALAPPDATA\uv\uv-profile.ps1`.
