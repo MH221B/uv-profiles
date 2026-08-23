@@ -4,7 +4,7 @@ A small Windows PowerShell workflow for named `uv` virtual environments. I made 
 
 ## Requirements
 
-- Windows PowerShell 5.1. PowerShell 7 can run the same scripts when `pwsh.exe` is available, but the runtime is authored against 5.1 syntax.
+- PowerShell 7 (`pwsh`) is preferred; Windows PowerShell 5.1 is supported and used as the fallback. The runtime is authored against 5.1 syntax and runs in both hosts.
 - `uv.exe` on `PATH`. The profile still loads if `uv.exe` is unavailable, but standard `uv` commands cannot run until it is installed and discoverable.
 
 ## Install
@@ -24,7 +24,7 @@ Review `src/uv-profile.ps1` and `Install-UvProfile.ps1`, then run from this repo
 . $PROFILE
 ```
 
-The installer updates only the current shell's effective `$PROFILE`. It does not change execution policy or machine-wide configuration. If the effective execution policy is `Restricted` or `AllSigned`, it refuses to run. By default profiles live under `$HOME\.virtualenvs`.
+The installer detects which PowerShell is available and installs the loader into the preferred profile: it targets PowerShell 7 (`pwsh.exe`) when present and falls back to Windows PowerShell 5.1 otherwise. Pass `-ProfilePath` to target a specific profile explicitly. The runtime is neutral to either host, so the same loader line works in both. The installer does not change execution policy or machine-wide configuration. If the effective execution policy is `Restricted` or `AllSigned`, it refuses to run. By default profiles live under `$HOME\.virtualenvs`.
 
 ## Configuration
 
