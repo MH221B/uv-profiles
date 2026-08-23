@@ -14,11 +14,17 @@ $disposableProfile = Join-Path $testRoot 'DisposableProfile.ps1'
 $oldUv = Get-Command uv -CommandType Function -ErrorAction SilentlyContinue
 try {
     $fixtureRoot = Join-Path $testRoot 'fixture\uv-profiles-v0.1.0'
-    New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $fixtureRoot, (Join-Path $fixtureRoot 'bootstrap') -Force | Out-Null
     $fixtureInstaller = Join-Path $fixtureRoot 'Install-UvProfile.ps1'
     Set-Content -LiteralPath $fixtureInstaller -Value @'
 param([string]$ProfilePath)
 Add-Content -LiteralPath $ProfilePath -Value "function global:uv { 'loaded' }"
+'@ -Encoding UTF8
+    # Decoy matching the real repo topology: if the bootstrap ever selects this
+    # nested installer instead of the repo-root one, uv will not load.
+    Set-Content -LiteralPath (Join-Path $fixtureRoot 'bootstrap\Install-UvProfile.ps1') -Value @'
+param([string]$ProfilePath)
+Write-Output 'wrong installer selected'
 '@ -Encoding UTF8
     $archivePath = Join-Path $testRoot 'release.zip'
     Compress-Archive -LiteralPath (Join-Path $testRoot 'fixture\uv-profiles-v0.1.0') -DestinationPath $archivePath
@@ -31,13 +37,14 @@ Add-Content -LiteralPath $ProfilePath -Value "function global:uv { 'loaded' }"
     Assert-ThrowsContaining 'draft' { Get-UvProfileRelease -GetMetadata { param($Uri) [pscustomobject]@{tag_name='v';draft=$true;prerelease=$false;zipball_url='x'} } } 'non-draft'
     Assert-ThrowsContaining 'prerelease' { Get-UvProfileRelease -GetMetadata { param($Uri) [pscustomobject]@{tag_name='v';draft=$false;prerelease=$true;zipball_url='x'} } } 'stable'
     Assert-ThrowsContaining 'non-GitHub URL' { Get-UvProfileRelease -GetMetadata { param($Uri) [pscustomobject]@{tag_name='v';draft=$false;prerelease=$false;zipball_url='https://example.invalid/x'} } } 'non-GitHub'
-    $duplicate = Join-Path $testRoot 'duplicate'
-    New-Item -ItemType Directory -Path (Join-Path $duplicate 'one'), (Join-Path $duplicate 'two') -Force | Out-Null
-    Set-Content (Join-Path $duplicate 'one\Install-UvProfile.ps1') 'param([string]$ProfilePath)' -Encoding UTF8
-    Set-Content (Join-Path $duplicate 'two\Install-UvProfile.ps1') 'param([string]$ProfilePath)' -Encoding UTF8
-    $duplicateArchive = Join-Path $testRoot 'duplicate.zip'; Compress-Archive -Path $duplicate -DestinationPath $duplicateArchive
+    $topA = Join-Path $testRoot 'topA'
+    $topB = Join-Path $testRoot 'topB'
+    New-Item -ItemType Directory -Path $topA, $topB -Force | Out-Null
+    Set-Content (Join-Path $topA 'Install-UvProfile.ps1') 'param([string]$ProfilePath)' -Encoding UTF8
+    Set-Content (Join-Path $topB 'Install-UvProfile.ps1') 'param([string]$ProfilePath)' -Encoding UTF8
+    $duplicateArchive = Join-Path $testRoot 'duplicate.zip'; Compress-Archive -Path $topA, $topB -DestinationPath $duplicateArchive -Force
     $duplicateExtract = Join-Path $testRoot 'duplicate-extract'; Expand-UvProfileArchive $duplicateArchive $duplicateExtract
-    Assert-ThrowsContaining 'duplicate installers' { Find-UvProfileInstaller $duplicateExtract } 'found 2'
+    Assert-ThrowsContaining 'duplicate repo roots' { Find-UvProfileInstaller $duplicateExtract } 'top-level repository directory'
     Assert-ThrowsContaining 'download cleanup' { Invoke-UvProfileBootstrap -ProfilePath $disposableProfile -TempParent $testRoot -GetMetadata { param($Uri) $release } -Download { throw 'download failure' } } 'download failure'
     Assert-Equal 'workspace cleanup' 0 @((Get-ChildItem $testRoot -Directory -Filter 'uv-profile-bootstrap-*' -ErrorAction SilentlyContinue)).Count
     Assert-ThrowsContaining 'empty profile' { Invoke-UvProfileBootstrap -ProfilePath '' -TempParent $testRoot -GetMetadata { throw 'provider called' } } 'empty'

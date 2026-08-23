@@ -71,9 +71,11 @@ function Expand-UvProfileArchive {
 
 function Find-UvProfileInstaller {
     param([string]$ExtractionRoot)
-    $matches = @(Get-ChildItem -LiteralPath $ExtractionRoot -Filter 'Install-UvProfile.ps1' -File -Recurse -ErrorAction Stop)
-    if ($matches.Count -ne 1) { throw "Expected exactly one Install-UvProfile.ps1 under '$ExtractionRoot', but found $($matches.Count)." }
-    $matches[0].FullName
+    $repoRoots = @(Get-ChildItem -LiteralPath $ExtractionRoot -Directory -ErrorAction Stop)
+    if ($repoRoots.Count -ne 1) { throw "Expected exactly one top-level repository directory under '$ExtractionRoot', but found $($repoRoots.Count)." }
+    $installer = Join-Path $repoRoots[0].FullName 'Install-UvProfile.ps1'
+    if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "The installer 'Install-UvProfile.ps1' was not found directly under the repository root '$($repoRoots[0].FullName)'." }
+    $installer
 }
 
 function Assert-UvProfilePath {
